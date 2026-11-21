@@ -16,14 +16,15 @@ import (
 )
 
 type poi struct {
-	ID          int64             `json:"id"`
-	Name        string            `json:"name"`
-	Category    string            `json:"category"`
-	Subcategory string            `json:"subcategory,omitempty"`
-	Lat         float64           `json:"lat"`
-	Lon         float64           `json:"lon"`
-	Tags        map[string]string `json:"tags,omitempty"`
-	DistanceM   *float64          `json:"distance_m,omitempty"`
+	ID           int64             `json:"id"`
+	Name         string            `json:"name"`
+	Category     string            `json:"category"`
+	Subcategory  string            `json:"subcategory,omitempty"`
+	TourCategory string            `json:"tour_category,omitempty"`
+	Lat          float64           `json:"lat"`
+	Lon          float64           `json:"lon"`
+	Tags         map[string]string `json:"tags,omitempty"`
+	DistanceM    *float64          `json:"distance_m,omitempty"`
 }
 
 var db *pgxpool.Pool
@@ -55,6 +56,7 @@ func main() {
 	mux.HandleFunc("GET /destinations", handleList)
 	mux.HandleFunc("GET /destinations/{id}", handleDetail)
 	mux.HandleFunc("GET /nearby", handleNearby)
+	mux.Handle("GET /", http.FileServer(http.Dir("web")))
 
 	srv := &http.Server{
 		Addr:         ":" + port,
@@ -86,19 +88,21 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	category := q.Get("category")
 	subcategory := q.Get("subcategory")
+	tourType := q.Get("type")
 	limit := clampInt(parseInt(q.Get("limit"), 50), 1, 200)
 	offset := clampInt(parseInt(q.Get("offset"), 0), 0, 100000)
 
 	rows, err := db.Query(r.Context(), `
-        SELECT id, name, category, COALESCE(subcategory,''),
+        SELECT id, name, category, COALESCE(subcategory,''), COALESCE(tour_category,''),
                ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lon,
                tags
         FROM poi
         WHERE ($1 = '' OR category = $1)
           AND ($2 = '' OR subcategory = $2)
+          AND ($3 = '' OR tour_category = $3)
         ORDER BY id
-        LIMIT $3 OFFSET $4`,
-		category, subcategory, limit, offset)
+        LIMIT $4 OFFSET $5`,
+		category, subcategory, tourType, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -108,7 +112,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	out := make([]poi, 0, limit)
 	for rows.Next() {
 		var p poi
-		if err := rows.Scan(&p.ID, &p.Name, &p.Category, &p.Subcategory, &p.Lat, &p.Lon, &p.Tags); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Category, &p.Subcategory, &p.TourCategory, &p.Lat, &p.Lon, &p.Tags); err != nil {
 			writeErr(w, http.StatusInternalServerError, err)
 			return
 		}
@@ -126,11 +130,11 @@ func handleDetail(w http.ResponseWriter, r *http.Request) {
 
 	var p poi
 	err = db.QueryRow(r.Context(), `
-        SELECT id, name, category, COALESCE(subcategory,''),
+        SELECT id, name, category, COALESCE(subcategory,''), COALESCE(tour_category,''),
                ST_Y(location::geometry) AS lat, ST_X(location::geometry) AS lon,
                tags
         FROM poi WHERE id = $1`, id).
-		Scan(&p.ID, &p.Name, &p.Category, &p.Subcategory, &p.Lat, &p.Lon, &p.Tags)
+		Scan(&p.ID, &p.Name, &p.Category, &p.Subcategory, &p.TourCategory, &p.Lat, &p.Lon, &p.Tags)
 	if errors.Is(err, pgx.ErrNoRows) {
 		writeErr(w, http.StatusNotFound, errors.New("not found"))
 		return
@@ -154,12 +158,13 @@ func handleNearby(w http.ResponseWriter, r *http.Request) {
 	limit := clampInt(parseInt(q.Get("limit"), 20), 1, 200)
 	category := q.Get("category")
 	subcategory := q.Get("subcategory")
+	tourType := q.Get("type")
 
 	rows, err := db.Query(r.Context(), `
         WITH origin AS (
             SELECT ST_SetSRID(ST_MakePoint($1, $2), 4326)::geography AS g
         )
-        SELECT p.id, p.name, p.category, COALESCE(p.subcategory,''),
+        SELECT p.id, p.name, p.category, COALESCE(p.subcategory,''), COALESCE(p.tour_category,''),
                ST_Y(p.location::geometry), ST_X(p.location::geometry),
                p.tags,
                ST_Distance(p.location, origin.g) AS meters
@@ -167,9 +172,10 @@ func handleNearby(w http.ResponseWriter, r *http.Request) {
         WHERE ST_DWithin(p.location, origin.g, $3)
           AND ($4 = '' OR p.category = $4)
           AND ($5 = '' OR p.subcategory = $5)
+          AND ($6 = '' OR p.tour_category = $6)
         ORDER BY meters
-        LIMIT $6`,
-		lon, lat, radius, category, subcategory, limit)
+        LIMIT $7`,
+		lon, lat, radius, category, subcategory, tourType, limit)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -180,7 +186,7 @@ func handleNearby(w http.ResponseWriter, r *http.Request) {
 	for rows.Next() {
 		var p poi
 		var meters float64
-		if err := rows.Scan(&p.ID, &p.Name, &p.Category, &p.Subcategory, &p.Lat, &p.Lon, &p.Tags, &meters); err != nil {
+		if err := rows.Scan(&p.ID, &p.Name, &p.Category, &p.Subcategory, &p.TourCategory, &p.Lat, &p.Lon, &p.Tags, &meters); err != nil {
 			writeErr(w, http.StatusInternalServerError, err)
 			return
 		}

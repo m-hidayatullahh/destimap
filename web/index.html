@@ -1,0 +1,196 @@
+<!doctype html>
+<html lang="id">
+<head>
+    <meta charset="utf-8">
+    <title>destimap — demo</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
+    <style>
+        html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
+        #map { height: 100vh; width: 100vw; }
+        .panel {
+            position: absolute; top: 12px; left: 12px; z-index: 1000;
+            background: #fff; padding: 10px 12px; border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,.15); font-size: 14px;
+            display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
+            max-width: calc(100vw - 24px);
+        }
+        .panel select, .panel button {
+            padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px;
+        }
+        .panel button { background: #0ea5e9; color: #fff; border-color: #0ea5e9; cursor: pointer; }
+        .panel button:disabled { background: #94a3b8; border-color: #94a3b8; cursor: wait; }
+        .count { color: #475569; }
+        .note {
+            position: absolute; bottom: 12px; left: 12px; z-index: 1000;
+            background: #fef3c7; color: #78350f; padding: 6px 10px;
+            border-radius: 6px; font-size: 12px; max-width: 320px;
+        }
+        .popup { min-width: 240px; max-width: 320px; }
+        .popup h4 { margin: 0 0 6px; font-size: 15px; }
+        .popup img { max-width: 100%; border-radius: 6px; margin: 4px 0; }
+        .popup .row { display: flex; gap: 6px; margin: 4px 0; font-size: 13px; }
+        .popup .row b { color: #475569; min-width: 72px; }
+        .popup .tag {
+            display: inline-block; background: #e0f2fe; color: #0369a1;
+            padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-right: 4px; margin-top: 4px;
+        }
+        .popup .facility {
+            display: inline-block; background: #dcfce7; color: #166534;
+            padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-right: 4px; margin-top: 4px;
+        }
+        .popup a { color: #0369a1; }
+        .popup .dist { color: #94a3b8; font-size: 11px; margin-top: 6px; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    <div class="panel">
+        <label>Kategori:
+            <select id="type">
+                <option value="">semua</option>
+                <option value="alam">Alam</option>
+                <option value="belanja">Belanja</option>
+                <option value="olahraga">Olahraga</option>
+                <option value="religi">Religi</option>
+                <option value="sejarah">Sejarah</option>
+                <option value="kuliner">Kuliner</option>
+                <option value="arsitektur">Arsitektur</option>
+                <option value="budaya">Budaya</option>
+                <option value="mice">MICE</option>
+                <option value="rekreasi">Rekreasi</option>
+            </select>
+        </label>
+        <label>Radius:
+            <select id="radius">
+                <option value="500">500 m</option>
+                <option value="1000" selected>1 km</option>
+                <option value="2000">2 km</option>
+                <option value="5000">5 km</option>
+            </select>
+        </label>
+        <button id="load">Cari di sekitar pusat peta</button>
+        <span class="count" id="count"></span>
+    </div>
+
+    <div class="note">
+        Data dari OpenStreetMap. Rating &amp; review butuh enrichment Google Places (belum aktif).
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        const map = L.map('map').setView([-6.1754, 106.8272], 14);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '© OpenStreetMap contributors',
+            maxZoom: 19,
+        }).addTo(map);
+
+        const markers = L.layerGroup().addTo(map);
+        const btn = document.getElementById('load');
+        const countEl = document.getElementById('count');
+
+        const FACILITY_KEYS = {
+            wheelchair: 'Kursi roda',
+            toilets: 'Toilet',
+            'toilets:wheelchair': 'Toilet aksesibel',
+            parking: 'Parkir',
+            'payment:cash': 'Tunai',
+            'payment:qris': 'QRIS',
+            internet_access: 'Wi-Fi',
+            air_conditioning: 'AC',
+            outdoor_seating: 'Outdoor',
+            takeaway: 'Takeaway',
+            delivery: 'Delivery',
+            drive_through: 'Drive-thru',
+        };
+
+        function esc(s) {
+            return String(s).replace(/[&<>"']/g, c => ({
+                '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'
+            }[c]));
+        }
+
+        function row(label, value, isLink) {
+            if (!value) return '';
+            const v = isLink
+                ? `<a href="${esc(value)}" target="_blank" rel="noopener">${esc(value)}</a>`
+                : esc(value);
+            return `<div class="row"><b>${label}</b><span>${v}</span></div>`;
+        }
+
+        function facilities(tags) {
+            const out = [];
+            for (const [key, label] of Object.entries(FACILITY_KEYS)) {
+                const v = tags[key];
+                if (!v || v === 'no') continue;
+                const txt = v === 'yes' ? label : `${label}: ${v}`;
+                out.push(`<span class="facility">${esc(txt)}</span>`);
+            }
+            return out.length ? `<div>${out.join('')}</div>` : '';
+        }
+
+        function wikiUrl(tag) {
+            if (!tag) return null;
+            const idx = tag.indexOf(':');
+            if (idx < 0) return `https://en.wikipedia.org/wiki/${encodeURIComponent(tag)}`;
+            const lang = tag.slice(0, idx);
+            const title = tag.slice(idx + 1);
+            return `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title)}`;
+        }
+
+        function popupHtml(p) {
+            const tags = p.tags || {};
+            const image = tags.image || tags['image:0'];
+            const addr = [tags['addr:housenumber'], tags['addr:street'], tags['addr:city']]
+                .filter(Boolean).join(' ');
+            return `<div class="popup">
+                <h4>${esc(p.name)}</h4>
+                ${p.tour_category ? `<span class="tag">${esc(p.tour_category)}</span>` : ''}
+                ${p.subcategory ? `<span class="tag">${esc(p.subcategory)}</span>` : ''}
+                ${image ? `<img src="${esc(image)}" alt="" onerror="this.style.display='none'">` : ''}
+                ${tags.description ? `<p style="font-size:13px;color:#334155;margin:6px 0">${esc(tags.description).slice(0, 220)}${tags.description.length > 220 ? '…' : ''}</p>` : ''}
+                ${row('Jam buka', tags.opening_hours)}
+                ${row('Alamat', addr)}
+                ${row('Telp', tags.phone || tags['contact:phone'])}
+                ${row('Website', tags.website || tags['contact:website'], true)}
+                ${row('Wikipedia', wikiUrl(tags.wikipedia), true)}
+                ${facilities(tags)}
+                <div class="dist">${Math.round(p.distance_m)} m dari pusat peta</div>
+            </div>`;
+        }
+
+        async function loadNearby() {
+            const c = map.getCenter();
+            const tourType = document.getElementById('type').value;
+            const radius = document.getElementById('radius').value;
+            const url = new URL('/nearby', location.origin);
+            url.searchParams.set('lat', c.lat.toFixed(6));
+            url.searchParams.set('lon', c.lng.toFixed(6));
+            url.searchParams.set('radius', radius);
+            url.searchParams.set('limit', 200);
+            if (tourType) url.searchParams.set('type', tourType);
+
+            btn.disabled = true;
+            btn.textContent = 'Memuat…';
+            try {
+                const res = await fetch(url);
+                if (!res.ok) throw new Error('HTTP ' + res.status);
+                const data = await res.json();
+                markers.clearLayers();
+                for (const p of data) {
+                    L.marker([p.lat, p.lon]).addTo(markers).bindPopup(popupHtml(p));
+                }
+                countEl.textContent = `${data.length} destinasi`;
+            } catch (err) {
+                alert('Gagal muat: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.textContent = 'Cari di sekitar pusat peta';
+            }
+        }
+
+        btn.addEventListener('click', loadNearby);
+        loadNearby();
+    </script>
+</body>
+</html>
