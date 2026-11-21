@@ -6,61 +6,107 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css">
     <style>
-        html, body { margin: 0; height: 100%; font-family: system-ui, sans-serif; }
+        html, body { margin: 0; height: 100%; font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; color: #0f172a; }
         #map { height: 100vh; width: 100vw; }
+
+        /* Panel kontrol */
         .panel {
             position: absolute; top: 12px; left: 12px; z-index: 1000;
-            background: #fff; padding: 10px 12px; border-radius: 8px;
-            box-shadow: 0 2px 8px rgba(0,0,0,.15); font-size: 14px;
-            display: flex; gap: 8px; align-items: center; flex-wrap: wrap;
-            max-width: calc(100vw - 24px);
+            background: #fff; padding: 12px 14px; border-radius: 12px;
+            box-shadow: 0 10px 30px rgba(15,23,42,.12), 0 2px 6px rgba(15,23,42,.06);
+            font-size: 14px; display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+            max-width: calc(100vw - 24px); border: 1px solid #e2e8f0;
         }
-        .panel select, .panel button {
-            padding: 6px 10px; border: 1px solid #ccc; border-radius: 6px; font-size: 14px;
+        .brand { font-weight: 700; font-size: 16px; color: #0f172a; display: flex; align-items: center; gap: 6px; }
+        .brand .dot { width: 8px; height: 8px; border-radius: 50%; background: #0ea5e9; box-shadow: 0 0 0 4px #e0f2fe; }
+        .brand small { font-weight: 400; color: #64748b; font-size: 11px; }
+        .panel label { color: #475569; font-size: 13px; }
+        .panel select, .panel button, .panel input {
+            padding: 7px 11px; border: 1px solid #cbd5e1; border-radius: 8px; font-size: 14px;
+            background: #fff; color: #0f172a; outline: none; transition: border-color .15s, box-shadow .15s;
         }
-        .panel button { background: #0ea5e9; color: #fff; border-color: #0ea5e9; cursor: pointer; }
+        .panel select:focus, .panel input:focus { border-color: #0ea5e9; box-shadow: 0 0 0 3px #e0f2fe; }
+        .panel input#search { min-width: 220px; }
+        .panel button {
+            background: #0ea5e9; color: #fff; border-color: #0ea5e9; cursor: pointer; font-weight: 500;
+        }
+        .panel button:hover:not(:disabled) { background: #0284c7; border-color: #0284c7; }
         .panel button:disabled { background: #94a3b8; border-color: #94a3b8; cursor: wait; }
-        .count { color: #475569; }
+        .count { color: #475569; font-size: 13px; }
+
+        /* Popup — max-width adaptif biar ga kepotong di mobile landscape */
+        .popup { min-width: 220px; max-width: min(320px, calc(100vw - 80px)); }
+
+        /* Marker — circle (no rotation, anchor = center, lat/lon exact). */
+        .destimap-pin {
+            width: 16px; height: 16px; border-radius: 50%;
+            border: 2px solid #fff;
+            box-shadow: 0 1px 3px rgba(15,23,42,.4);
+        }
+
+        /* Legend */
+        .legend {
+            position: absolute; bottom: 12px; right: 12px; z-index: 1000;
+            background: #fff; border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 12px rgba(15,23,42,.08);
+            padding: 8px 10px; border-radius: 10px; font-size: 11px; color: #475569;
+            max-width: 160px; line-height: 1.6;
+        }
+        .legend-row { display: inline-flex; align-items: center; gap: 4px; margin-right: 8px; }
+        .legend-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
+        .popup h4 { margin: 0 0 6px; font-size: 16px; line-height: 1.3; color: #0f172a; }
+        .popup img { max-width: 100%; border-radius: 8px; margin: 6px 0; display: block; }
+        .popup .row { display: flex; gap: 6px; margin: 4px 0; font-size: 13px; }
+        .popup .row b { color: #64748b; min-width: 72px; font-weight: 500; }
+        .popup .row span { color: #0f172a; flex: 1; word-break: break-word; }
+        .popup .section-title {
+            font-size: 11px; color: #94a3b8; margin: 12px 0 6px;
+            text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600;
+            border-top: 1px solid #f1f5f9; padding-top: 10px;
+        }
+        .popup .section-title:first-of-type { border-top: none; padding-top: 2px; margin-top: 8px; }
+        .popup .nearby-row { font-size: 12.5px; margin: 3px 0; color: #334155; }
+        .popup .nearby-row b { color: #0f172a; font-weight: 500; }
+        .popup .nearby-dist { color: #94a3b8; }
+        .popup .facility {
+            display: inline-block; background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0;
+            padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-right: 4px; margin-top: 4px;
+        }
+        .popup a { color: #0284c7; text-decoration: none; }
+        .popup a:hover { text-decoration: underline; }
+        .popup .dist { color: #94a3b8; font-size: 11px; margin-top: 8px; }
+        .popup .rute-btn {
+            display: inline-flex; align-items: center; gap: 6px;
+            background: #10b981; color: #fff; padding: 7px 12px; border-radius: 8px;
+            text-decoration: none; font-size: 13px; font-weight: 500; margin-top: 10px;
+        }
+        .popup .rute-btn:hover { background: #059669; text-decoration: none; }
+
+        /* Tag warna di-inject inline dari colorFor() — kategori apa pun dari DB */
+        .popup .tag {
+            display: inline-block; padding: 2px 10px; border-radius: 10px;
+            font-size: 11px; margin-right: 4px; margin-top: 4px; font-weight: 500;
+            background: #f1f5f9; color: #475569; border: 1px solid #e2e8f0;
+        }
+
+        /* Info note (bawah) */
         .note {
             position: absolute; bottom: 12px; left: 12px; z-index: 1000;
-            background: #fef3c7; color: #78350f; padding: 6px 10px;
-            border-radius: 6px; font-size: 12px; max-width: 320px;
+            background: #fff; border: 1px solid #e2e8f0;
+            box-shadow: 0 4px 12px rgba(15,23,42,.08);
+            padding: 10px 12px; border-radius: 10px; font-size: 12px;
+            max-width: 360px; color: #475569; line-height: 1.5;
         }
-        .popup { min-width: 240px; max-width: 320px; }
-        .popup h4 { margin: 0 0 6px; font-size: 15px; }
-        .popup img { max-width: 100%; border-radius: 6px; margin: 4px 0; }
-        .popup .row { display: flex; gap: 6px; margin: 4px 0; font-size: 13px; }
-        .popup .row b { color: #475569; min-width: 72px; }
-        .popup .tag {
-            display: inline-block; background: #e0f2fe; color: #0369a1;
-            padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-right: 4px; margin-top: 4px;
-        }
-        .popup .facility {
-            display: inline-block; background: #dcfce7; color: #166534;
-            padding: 2px 8px; border-radius: 10px; font-size: 11px; margin-right: 4px; margin-top: 4px;
-        }
-        .popup a { color: #0369a1; }
-        .popup .dist { color: #94a3b8; font-size: 11px; margin-top: 6px; }
+        .note b { color: #0f172a; }
     </style>
 </head>
 <body>
     <div id="map"></div>
     <div class="panel">
+        <span class="brand"><span class="dot"></span>destimap <small>demo</small></span>
+        <input id="search" type="search" placeholder="Cari destinasi (nama)…" autocomplete="off">
         <label>Kategori:
-            <select id="type">
-                <option value="">semua</option>
-                <option value="alam">Alam</option>
-                <option value="belanja">Belanja</option>
-                <option value="olahraga">Olahraga</option>
-                <option value="religi">Religi</option>
-                <option value="sejarah">Sejarah</option>
-                <option value="kuliner">Kuliner</option>
-                <option value="arsitektur">Arsitektur</option>
-                <option value="budaya">Budaya</option>
-                <option value="mice">MICE</option>
-                <option value="rekreasi">Rekreasi</option>
-                <option value="akomodasi">Akomodasi</option>
-            </select>
+            <select id="type"><option value="">semua</option></select>
         </label>
         <label>Wilayah:
             <select id="district"><option value="">semua</option></select>
@@ -78,12 +124,15 @@
     </div>
 
     <div class="note">
-        Data dari OpenStreetMap. Rating &amp; review butuh enrichment Google Places (belum aktif).
+        <b>Data OSM</b> (© OpenStreetMap, ODbL). Fasilitas tanpa nama di OSM (mis. ATM/parkir/toilet mayoritas) belum masuk DB. Rating &amp; review butuh enrichment Google Places — belum aktif.
     </div>
+
+    <div class="legend" id="legend"></div>
 
     <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
     <script>
-        const map = L.map('map').setView([-6.1754, 106.8272], 14);
+        const DEFAULT_CENTER = [-6.1754, 106.8272], DEFAULT_ZOOM = 14;
+        const map = L.map('map').setView(DEFAULT_CENTER, DEFAULT_ZOOM);
         L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
             attribution: '© OpenStreetMap contributors',
             maxZoom: 19,
@@ -93,6 +142,59 @@
         const btn = document.getElementById('load');
         const countEl = document.getElementById('count');
 
+        // Palette dasar — kategori umum dapet warna ini (hand-picked, kontras).
+        const CAT_COLORS_SEED = {
+            alam:'#10b981', belanja:'#f59e0b', olahraga:'#ef4444', religi:'#8b5cf6',
+            sejarah:'#e11d48', kuliner:'#f97316', arsitektur:'#0ea5e9', budaya:'#ec4899',
+            mice:'#6366f1', rekreasi:'#14b8a6', akomodasi:'#a855f7',
+        };
+        // Fallback palette buat kategori baru — hand-picked, ga tabrakan sama
+        // warna seed di atas, cukup kontras antar satu sama lain.
+        const FALLBACK_PALETTE = [
+            '#84cc16', '#0891b2', '#7c3aed', '#be123c',
+            '#ca8a04', '#065f46', '#9333ea', '#0369a1',
+        ];
+        function hashIdx(s, mod) {
+            let h = 0;
+            for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+            return h % mod;
+        }
+        const CAT_COLORS = {};
+        const fallbackUsed = []; // urutan assignment; kategori ke-N dapet [N % palette.length]
+        function colorFor(cat) {
+            if (!cat) return '#64748b';
+            if (CAT_COLORS[cat]) return CAT_COLORS[cat];
+            let c;
+            if (CAT_COLORS_SEED[cat]) {
+                c = CAT_COLORS_SEED[cat];
+            } else {
+                // Cycle palette by order of first-use agar tetangga di legend
+                // ga keabeten warna mirip. Fallback ke hash kalo race.
+                const idx = fallbackUsed.length < FALLBACK_PALETTE.length
+                    ? fallbackUsed.length
+                    : hashIdx(cat, FALLBACK_PALETTE.length);
+                c = FALLBACK_PALETTE[idx];
+                fallbackUsed.push(cat);
+            }
+            CAT_COLORS[cat] = c;
+            return c;
+        }
+
+        const iconCache = new Map();
+        function markerIcon(cat) {
+            const key = cat || '_none';
+            if (iconCache.has(key)) return iconCache.get(key);
+            const icon = L.divIcon({
+                className: '',
+                html: `<div class="destimap-pin" style="background:${colorFor(cat)}"></div>`,
+                iconSize: [20, 20],
+                iconAnchor: [10, 10],
+                popupAnchor: [0, -10],
+            });
+            iconCache.set(key, icon);
+            return icon;
+        }
+
         const FACILITY_KEYS = {
             wheelchair: 'Kursi roda',
             toilets: 'Toilet',
@@ -100,13 +202,57 @@
             parking: 'Parkir',
             'payment:cash': 'Tunai',
             'payment:qris': 'QRIS',
+            'payment:credit_cards': 'Kartu kredit',
+            'payment:debit_cards': 'Debit',
+            'payment:gopay': 'GoPay',
+            'payment:ovo': 'OVO',
+            'payment:dana': 'DANA',
+            'payment:shopeepay': 'ShopeePay',
             internet_access: 'Wi-Fi',
             air_conditioning: 'AC',
             outdoor_seating: 'Outdoor',
             takeaway: 'Takeaway',
             delivery: 'Delivery',
             drive_through: 'Drive-thru',
+            drinking_water: 'Air minum',
+            baby_changing: 'Ruang bayi',
+            smoking: 'Area rokok',
+            fee: 'Berbayar',
         };
+
+        // Mapping hanya buat tampilan (icon + label Indonesia). Subcategory apa pun
+        // yg ga ada di map ini tetep ditampilin pakai nama OSM mentah.
+        const FACILITY_DISPLAY = {
+            place_of_worship: { icon: '🕌', label: 'Tempat ibadah' },
+            atm:              { icon: '🏧', label: 'ATM' },
+            parking:          { icon: '🅿️', label: 'Parkir' },
+            toilets:          { icon: '🚻', label: 'Toilet' },
+            fuel:             { icon: '⛽', label: 'SPBU' },
+            pharmacy:         { icon: '💊', label: 'Apotek' },
+            hospital:         { icon: '🏥', label: 'RS' },
+            clinic:           { icon: '🏥', label: 'Klinik' },
+            bank:             { icon: '🏦', label: 'Bank' },
+            convenience:      { icon: '🏪', label: 'Minimarket' },
+            supermarket:      { icon: '🛒', label: 'Supermarket' },
+            restaurant:       { icon: '🍽️', label: 'Restoran' },
+            cafe:             { icon: '☕', label: 'Kafe' },
+            fast_food:        { icon: '🍔', label: 'Fast food' },
+            police:           { icon: '👮', label: 'Polisi' },
+            school:           { icon: '🏫', label: 'Sekolah' },
+            fuel_station:     { icon: '⛽', label: 'SPBU' },
+        };
+
+        const RELIGION_LABEL = {
+            muslim: 'Musholla / Masjid',
+            christian: 'Gereja',
+            catholic: 'Gereja Katolik',
+            buddhist: 'Vihara',
+            hindu: 'Pura',
+        };
+
+        function titleCase(s) {
+            return s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+        }
 
         function esc(s) {
             return String(s).replace(/[&<>"']/g, c => ({
@@ -162,28 +308,153 @@
         function popupHtml(p) {
             const tags = p.tags || {};
             const image = tags.image || tags['image:0'];
-            const addr = [tags['addr:housenumber'], tags['addr:street'], tags['addr:city']]
+            // Addr awal dari OSM tags (sering tipis). Nanti diganti Nominatim reverse geocode
+            // on popup open biar dapet full hierarchy kayak Google Maps (kelurahan, kecamatan,
+            // kota, provinsi, kodepos).
+            const addrOsm = [tags['addr:housenumber'], tags['addr:street'], tags['addr:city']]
                 .filter(Boolean).join(' ');
-            const mapsRute = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lon}`;
-            return `<div class="popup" data-wiki="${esc(tags.wikipedia || '')}" data-has-image="${image ? '1' : '0'}">
+            // Format /maps/place/NAME/@lat,lon,zoom — pin di exact coord + nama buat label.
+            // Reliable buat dua kasus:
+            //   - Landmark bernama unik (Pulau Bidadari, Monas) → Google match ke place DB
+            //     mereka, kasih rich info.
+            //   - POI nama ambigu (Bank DKI, warung) → Google drop pin di coord tanpa milih
+            //     cabang se-Jakarta (karena @lat,lon anchor map center).
+            // Zoom 17 default; 15 buat area besar (natural/place) supaya pulau/taman keliatan.
+            const zoom = (p.category === 'natural' || p.category === 'place') ? 15 : 17;
+            const mapsRute = `https://www.google.com/maps/place/${encodeURIComponent(p.name)}/@${p.lat},${p.lon},${zoom}z`;
+            return `<div class="popup" data-wiki="${esc(tags.wikipedia || '')}" data-has-image="${image ? '1' : '0'}" data-lat="${p.lat}" data-lon="${p.lon}" data-id="${p.id}">
                 <h4>${esc(p.name)}</h4>
-                ${p.tour_category ? `<span class="tag">${esc(p.tour_category)}</span>` : ''}
-                ${p.subcategory ? `<span class="tag">${esc(p.subcategory)}</span>` : ''}
+                ${p.tour_category ? `<span class="tag" style="background:${colorFor(p.tour_category)}22;color:${colorFor(p.tour_category)};border-color:${colorFor(p.tour_category)}66">${esc(p.tour_category)}</span>` : ''}
+                ${p.subcategory ? `<span class="tag">${esc(p.subcategory.replace(/_/g,' '))}</span>` : ''}
                 <div class="img-slot">
                     ${image ? `<img src="${esc(image)}" alt="" onerror="this.parentElement.innerHTML=''">` : ''}
                 </div>
                 ${tags.description ? `<p style="font-size:13px;color:#334155;margin:6px 0">${esc(tags.description).slice(0, 220)}${tags.description.length > 220 ? '…' : ''}</p>` : ''}
                 ${row('Jam buka', tags.opening_hours)}
-                ${row('Alamat', addr)}
+                <div class="row addr-slot"><b>Alamat</b><span>${addrOsm ? esc(addrOsm) : '<i style="color:#94a3b8">memuat…</i>'}</span></div>
                 ${row('Telp', tags.phone || tags['contact:phone'])}
                 ${row('Website', tags.website || tags['contact:website'], true)}
                 ${row('Wikipedia', wikiUrl(tags.wikipedia), true)}
-                ${facilities(tags)}
-                <div style="margin-top:8px"><a href="${mapsRute}" target="_blank" rel="noopener"
-                    style="display:inline-block;background:#10b981;color:#fff;padding:6px 10px;border-radius:6px;text-decoration:none;font-size:13px">
-                    ➔ Rute (Google Maps)</a></div>
-                <div class="dist">${Math.round(p.distance_m)} m dari pusat peta</div>
+                <div class="section-title">Fasilitas di destinasi</div>
+                ${facilities(tags) || '<div class="nearby-row" style="color:#94a3b8">belum ada data di OSM</div>'}
+                <div class="section-title">Fasilitas terdekat (500 m)</div>
+                <div class="nearby-slot"><div class="nearby-row" style="color:#94a3b8">memuat…</div></div>
+                <div class="section-title">Destinasi wisata terdekat (2 km)</div>
+                <div class="dest-slot"><div class="nearby-row" style="color:#94a3b8">memuat…</div></div>
+                <a class="rute-btn" href="${mapsRute}" target="_blank" rel="noopener">➔ Buka di Google Maps</a>
+                ${p.distance_m != null ? `<div class="dist">${Math.round(p.distance_m)} m dari pusat peta</div>` : ''}
             </div>`;
+        }
+
+        async function enrichPopupFacilities(marker) {
+            const el = marker.getPopup().getElement();
+            if (!el) return;
+            const popupEl = el.querySelector('.popup');
+            if (!popupEl || popupEl.dataset.facilitiesLoaded) return;
+            popupEl.dataset.facilitiesLoaded = '1';
+            const slot = popupEl.querySelector('.nearby-slot');
+            if (!slot) return;
+            try {
+                const lat = popupEl.dataset.lat, lon = popupEl.dataset.lon;
+                const res = await fetch(`/facilities?lat=${lat}&lon=${lon}&radius=500&per_type=1`);
+                if (!res.ok) throw new Error(res.status);
+                const data = await res.json();
+
+                // Sort subcategory by jarak terdekat (first item in each group)
+                const entries = Object.entries(data)
+                    .filter(([_, list]) => list && list.length)
+                    .sort((a, b) => a[1][0].distance_m - b[1][0].distance_m);
+
+                const lines = entries.map(([subcat, list]) => {
+                    const f = list[0];
+                    // place_of_worship: differentiate by religion kalo ada
+                    let label, icon;
+                    if (subcat === 'place_of_worship' && f.religion && RELIGION_LABEL[f.religion]) {
+                        label = RELIGION_LABEL[f.religion];
+                        icon  = FACILITY_DISPLAY.place_of_worship.icon;
+                    } else if (FACILITY_DISPLAY[subcat]) {
+                        label = FACILITY_DISPLAY[subcat].label;
+                        icon  = FACILITY_DISPLAY[subcat].icon;
+                    } else {
+                        label = titleCase(subcat);
+                        icon  = '📍';
+                    }
+                    return `<div class="nearby-row">${icon} <b>${esc(label)}</b>: ${esc(f.name)} <span class="nearby-dist">(${Math.round(f.distance_m)} m)</span></div>`;
+                });
+
+                slot.innerHTML = lines.length
+                    ? lines.join('')
+                    : '<div class="nearby-row" style="color:#94a3b8">tidak ada fasilitas dalam 500 m</div>';
+            } catch {
+                slot.innerHTML = '<div class="nearby-row" style="color:#b91c1c">gagal muat fasilitas</div>';
+            }
+        }
+
+        async function enrichPopupDestinations(marker) {
+            const el = marker.getPopup().getElement();
+            if (!el) return;
+            const popupEl = el.querySelector('.popup');
+            if (!popupEl || popupEl.dataset.destLoaded) return;
+            popupEl.dataset.destLoaded = '1';
+            const slot = popupEl.querySelector('.dest-slot');
+            if (!slot) return;
+            try {
+                const lat = popupEl.dataset.lat, lon = popupEl.dataset.lon, selfId = popupEl.dataset.id;
+                const res = await fetch(`/nearby?lat=${lat}&lon=${lon}&radius=2000&limit=30`);
+                if (!res.ok) throw new Error(res.status);
+                const data = await res.json();
+                // Cuma destinasi wisata (tour_category ada) + exclude diri sendiri.
+                const items = data
+                    .filter(d => d.tour_category && String(d.id) !== selfId)
+                    .slice(0, 5);
+                if (!items.length) {
+                    slot.innerHTML = '<div class="nearby-row" style="color:#94a3b8">tidak ada destinasi lain dalam 2 km</div>';
+                    return;
+                }
+                slot.innerHTML = items.map(d => `
+                    <div class="nearby-row">
+                        <span class="destimap-pin" style="display:inline-block;width:8px;height:8px;background:${colorFor(d.tour_category)};margin-right:6px"></span>
+                        <b>${esc(d.name)}</b>
+                        <span class="nearby-dist">(${Math.round(d.distance_m)} m · ${esc(d.tour_category)})</span>
+                    </div>
+                `).join('');
+            } catch {
+                slot.innerHTML = '<div class="nearby-row" style="color:#b91c1c">gagal muat destinasi</div>';
+            }
+        }
+
+        // Cache Nominatim reverse geocode per (lat,lon) — popup tetangga bisa share hasil.
+        const addrCache = new Map();
+        async function enrichPopupAddress(marker) {
+            const el = marker.getPopup().getElement();
+            if (!el) return;
+            const popupEl = el.querySelector('.popup');
+            if (!popupEl || popupEl.dataset.addrLoaded) return;
+            popupEl.dataset.addrLoaded = '1';
+            const lat = popupEl.dataset.lat, lon = popupEl.dataset.lon;
+            const key = `${lat},${lon}`;
+            const slot = popupEl.querySelector('.addr-slot span');
+            if (!slot) return;
+            try {
+                let full;
+                if (addrCache.has(key)) {
+                    full = addrCache.get(key);
+                } else {
+                    const r = await fetch(`https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lon}&zoom=18&addressdetails=1`);
+                    if (!r.ok) throw 0;
+                    const j = await r.json();
+                    // Trim leading POI name (Nominatim prepends nama tempat → redundant sama <h4>).
+                    const parts = (j.display_name || '').split(',').map(s => s.trim());
+                    const poiName = (popupEl.querySelector('h4')?.textContent || '').trim();
+                    if (parts[0] && parts[0].toLowerCase() === poiName.toLowerCase()) parts.shift();
+                    full = parts.join(', ');
+                    addrCache.set(key, full);
+                }
+                slot.innerHTML = full ? esc(full) : '<i style="color:#94a3b8">tidak ada data</i>';
+            } catch {
+                // Kalo udah ada addr dari OSM, biarin; kalo belom, tampilin dash.
+                if (slot.querySelector('i')) slot.innerHTML = '<i style="color:#94a3b8">tidak ada data</i>';
+            }
         }
 
         async function enrichPopupImage(marker) {
@@ -202,16 +473,26 @@
             const tourType = document.getElementById('type').value;
             const district = document.getElementById('district').value;
             const radius = document.getElementById('radius').value;
+            const searchTerm = document.getElementById('search').value.trim();
 
-            // Kalau wilayah dipilih, ambil seluruh wilayah (abaikan radius) — jangan
-            // batasin via jarak dari pusat peta karena bisa luput sebagian besar.
-            let url;
-            if (district) {
+            // Prioritas mode: search > wilayah > sekitar pusat peta.
+            let url, mode;
+            if (searchTerm) {
+                mode = 'search';
+                url = new URL('/search', location.origin);
+                url.searchParams.set('q', searchTerm);
+                url.searchParams.set('limit', 100);
+                const c = map.getCenter();
+                url.searchParams.set('lat', c.lat.toFixed(6));
+                url.searchParams.set('lon', c.lng.toFixed(6));
+            } else if (district) {
+                mode = 'district';
                 url = new URL('/destinations', location.origin);
                 url.searchParams.set('district', district);
                 url.searchParams.set('limit', 10000);
                 if (tourType) url.searchParams.set('type', tourType);
             } else {
+                mode = 'nearby';
                 const c = map.getCenter();
                 url = new URL('/nearby', location.origin);
                 url.searchParams.set('lat', c.lat.toFixed(6));
@@ -229,19 +510,29 @@
                 const data = await res.json();
                 markers.clearLayers();
                 for (const p of data) {
-                    const m = L.marker([p.lat, p.lon]).addTo(markers).bindPopup(popupHtml(p));
-                    m.on('popupopen', () => enrichPopupImage(m));
+                    const m = L.marker([p.lat, p.lon], { icon: markerIcon(p.tour_category) }).addTo(markers).bindPopup(popupHtml(p));
+                    m.on('popupopen', () => {
+                        enrichPopupImage(m);
+                        enrichPopupFacilities(m);
+                        enrichPopupAddress(m);
+                        enrichPopupDestinations(m);
+                    });
                 }
-                if (district && data.length > 0) {
+                if ((mode === 'district' || mode === 'search') && data.length > 0) {
                     const group = L.featureGroup(data.map(p => L.marker([p.lat, p.lon])));
                     map.fitBounds(group.getBounds().pad(0.05));
                 }
-                countEl.textContent = `${data.length} destinasi${district ? ` di ${district}` : ''}`;
+                let suffix = '';
+                if (mode === 'search') suffix = ` cocok "${searchTerm}"`;
+                else if (mode === 'district') suffix = ` di ${district}`;
+                countEl.textContent = `${data.length} destinasi${suffix}`;
             } catch (err) {
                 alert('Gagal muat: ' + err.message);
             } finally {
                 btn.disabled = false;
-                btn.textContent = district
+                btn.textContent = mode === 'search'
+                    ? 'Cari lagi'
+                    : mode === 'district'
                     ? 'Muat ulang wilayah'
                     : 'Cari di sekitar pusat peta';
             }
@@ -250,6 +541,20 @@
         // Auto reload saat kategori atau wilayah berubah (biar user nggak bingung)
         document.getElementById('type').addEventListener('change', loadNearby);
         document.getElementById('district').addEventListener('change', loadNearby);
+        // Debounce search biar ga spam API per keystroke.
+        let searchTimer;
+        let lastSearchTerm = '';
+        document.getElementById('search').addEventListener('input', (e) => {
+            const term = e.target.value.trim();
+            // Pas search dikosongin setelah sebelumnya ada query, reset view ke default
+            // biar hasil nearby kebuka dari Jakarta center, bukan dari lokasi hasil search.
+            if (!term && lastSearchTerm) {
+                map.setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+            }
+            lastSearchTerm = term;
+            clearTimeout(searchTimer);
+            searchTimer = setTimeout(loadNearby, 350);
+        });
 
         async function loadDistricts() {
             try {
@@ -265,8 +570,28 @@
             } catch { /* non-fatal */ }
         }
 
+        // Fetch kategori yg bener-bener ada di DB. Isi dropdown + legend.
+        async function loadCategories() {
+            const sel = document.getElementById('type');
+            const legend = document.getElementById('legend');
+            try {
+                const res = await fetch('/categories');
+                if (!res.ok) throw 0;
+                const list = await res.json();
+                for (const { name, count } of list) {
+                    const o = document.createElement('option');
+                    o.value = name;
+                    o.textContent = `${name} (${count})`;
+                    sel.appendChild(o);
+                }
+                legend.innerHTML = list.map(({ name }) =>
+                    `<span class="legend-row"><span class="legend-dot" style="background:${colorFor(name)}"></span>${esc(name)}</span>`
+                ).join('');
+            } catch { /* non-fatal — dropdown tetap jalan dengan "semua" */ }
+        }
+
         btn.addEventListener('click', loadNearby);
-        loadDistricts().then(loadNearby);
+        Promise.all([loadDistricts(), loadCategories()]).then(loadNearby);
     </script>
 </body>
 </html>

@@ -3,3 +3,6 @@ bin/
 *.exe
 .DS_Store
 data/*.osm.pbf
+.claude/
+/api
+/sync-pbf
