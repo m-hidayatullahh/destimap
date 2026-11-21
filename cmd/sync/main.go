@@ -22,7 +22,6 @@ import (
 var overpassMirrors = []string{
 	"https://overpass-api.de/api/interpreter",
 	"https://overpass.kumi.systems/api/interpreter",
-	"https://overpass.osm.jp/api/interpreter",
 	"https://overpass.private.coffee/api/interpreter",
 }
 
@@ -54,7 +53,7 @@ func (e overpassEl) coord() (lat, lon float64, ok bool) {
 	return 0, 0, false
 }
 
-var categoryKeys = []string{"tourism", "amenity", "shop", "leisure", "historic"}
+var categoryKeys = []string{"tourism", "amenity", "shop", "leisure", "historic", "natural", "place"}
 
 func (e overpassEl) categorySubcategory() (string, string) {
 	for _, k := range categoryKeys {
@@ -125,7 +124,10 @@ func main() {
 		log.Fatal("JAKARTA_BBOX not set")
 	}
 
-	// Kategori yg di-pull — urutannya nggak ngaruh, kombinasi semua yg relevan utk destinasi
+	// Kategori yg di-pull. natural & place di-filter regex spy ga narik jutaan
+	// pohon/semak — cuma fitur destinasi (pantai, puncak, pulau, dll).
+	naturalRe := "beach|peak|waterfall|cliff|bay|spring|cave_entrance|hot_spring|volcano|reef|wetland"
+	placeRe := "island|islet"
 	query := fmt.Sprintf(`[out:json][timeout:180];
 (
   node["tourism"](%[1]s);     way["tourism"](%[1]s);     relation["tourism"](%[1]s);
@@ -133,8 +135,13 @@ func main() {
   node["shop"](%[1]s);        way["shop"](%[1]s);        relation["shop"](%[1]s);
   node["leisure"](%[1]s);     way["leisure"](%[1]s);     relation["leisure"](%[1]s);
   node["historic"](%[1]s);    way["historic"](%[1]s);    relation["historic"](%[1]s);
+  node["natural"~"^(%[2]s)$"](%[1]s);
+  way["natural"~"^(%[2]s)$"](%[1]s);
+  node["place"~"^(%[3]s)$"](%[1]s);
+  way["place"~"^(%[3]s)$"](%[1]s);
+  relation["place"~"^(%[3]s)$"](%[1]s);
 );
-out center;`, bbox)
+out center;`, bbox, naturalRe, placeRe)
 
 	ctx := context.Background()
 	pool, err := pgxpool.New(ctx, dbURL)
