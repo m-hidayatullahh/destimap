@@ -72,11 +72,14 @@ func main() {
 		log.Fatal("JAKARTA_BBOX not set")
 	}
 
-	query := fmt.Sprintf(`[out:json][timeout:60];
+	// Kategori yg di-pull — urutannya nggak ngaruh, kombinasi semua yg relevan utk destinasi
+	query := fmt.Sprintf(`[out:json][timeout:180];
 (
-  node["tourism"](%[1]s);
-  way["tourism"](%[1]s);
-  relation["tourism"](%[1]s);
+  node["tourism"](%[1]s);     way["tourism"](%[1]s);     relation["tourism"](%[1]s);
+  node["amenity"](%[1]s);     way["amenity"](%[1]s);     relation["amenity"](%[1]s);
+  node["shop"](%[1]s);        way["shop"](%[1]s);        relation["shop"](%[1]s);
+  node["leisure"](%[1]s);     way["leisure"](%[1]s);     relation["leisure"](%[1]s);
+  node["historic"](%[1]s);    way["historic"](%[1]s);    relation["historic"](%[1]s);
 );
 out center;`, bbox)
 
