@@ -56,6 +56,7 @@ func main() {
 	mux.HandleFunc("GET /destinations", handleList)
 	mux.HandleFunc("GET /destinations/{id}", handleDetail)
 	mux.HandleFunc("GET /nearby", handleNearby)
+	mux.HandleFunc("GET /districts", handleDistricts)
 	mux.Handle("GET /", http.FileServer(http.Dir("web")))
 
 	srv := &http.Server{
@@ -89,6 +90,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	category := q.Get("category")
 	subcategory := q.Get("subcategory")
 	tourType := q.Get("type")
+	district := q.Get("district")
 	limit := clampInt(parseInt(q.Get("limit"), 50), 1, 200)
 	offset := clampInt(parseInt(q.Get("offset"), 0), 0, 100000)
 
@@ -100,9 +102,10 @@ func handleList(w http.ResponseWriter, r *http.Request) {
         WHERE ($1 = '' OR category = $1)
           AND ($2 = '' OR subcategory = $2)
           AND ($3 = '' OR tour_category = $3)
+          AND ($4 = '' OR ST_Intersects(location, (SELECT boundary FROM districts WHERE name = $4)))
         ORDER BY id
-        LIMIT $4 OFFSET $5`,
-		category, subcategory, tourType, limit, offset)
+        LIMIT $5 OFFSET $6`,
+		category, subcategory, tourType, district, limit, offset)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -159,6 +162,7 @@ func handleNearby(w http.ResponseWriter, r *http.Request) {
 	category := q.Get("category")
 	subcategory := q.Get("subcategory")
 	tourType := q.Get("type")
+	district := q.Get("district")
 
 	rows, err := db.Query(r.Context(), `
         WITH origin AS (
@@ -173,9 +177,10 @@ func handleNearby(w http.ResponseWriter, r *http.Request) {
           AND ($4 = '' OR p.category = $4)
           AND ($5 = '' OR p.subcategory = $5)
           AND ($6 = '' OR p.tour_category = $6)
+          AND ($7 = '' OR ST_Intersects(p.location, (SELECT boundary FROM districts WHERE name = $7)))
         ORDER BY meters
-        LIMIT $7`,
-		lon, lat, radius, category, subcategory, tourType, limit)
+        LIMIT $8`,
+		lon, lat, radius, category, subcategory, tourType, district, limit)
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, err)
 		return
@@ -192,6 +197,25 @@ func handleNearby(w http.ResponseWriter, r *http.Request) {
 		}
 		p.DistanceM = &meters
 		out = append(out, p)
+	}
+	writeJSON(w, http.StatusOK, out)
+}
+
+func handleDistricts(w http.ResponseWriter, r *http.Request) {
+	rows, err := db.Query(r.Context(), `SELECT name FROM districts ORDER BY name`)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, err)
+		return
+	}
+	defer rows.Close()
+	out := []string{}
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			writeErr(w, http.StatusInternalServerError, err)
+			return
+		}
+		out = append(out, n)
 	}
 	writeJSON(w, http.StatusOK, out)
 }

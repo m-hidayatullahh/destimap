@@ -59,7 +59,11 @@
                 <option value="budaya">Budaya</option>
                 <option value="mice">MICE</option>
                 <option value="rekreasi">Rekreasi</option>
+                <option value="akomodasi">Akomodasi</option>
             </select>
+        </label>
+        <label>Wilayah:
+            <select id="district"><option value="">semua</option></select>
         </label>
         <label>Radius:
             <select id="radius">
@@ -138,16 +142,36 @@
             return `https://${lang}.wikipedia.org/wiki/${encodeURIComponent(title)}`;
         }
 
+        const wikiThumbCache = new Map();
+        async function fetchWikiThumb(wikiTag) {
+            if (!wikiTag) return null;
+            if (wikiThumbCache.has(wikiTag)) return wikiThumbCache.get(wikiTag);
+            const idx = wikiTag.indexOf(':');
+            const lang = idx < 0 ? 'en' : wikiTag.slice(0, idx);
+            const title = idx < 0 ? wikiTag : wikiTag.slice(idx + 1);
+            try {
+                const r = await fetch(`https://${lang}.wikipedia.org/api/rest_v1/page/summary/${encodeURIComponent(title)}`);
+                if (!r.ok) throw 0;
+                const j = await r.json();
+                const url = j.thumbnail?.source || j.originalimage?.source || null;
+                wikiThumbCache.set(wikiTag, url);
+                return url;
+            } catch { wikiThumbCache.set(wikiTag, null); return null; }
+        }
+
         function popupHtml(p) {
             const tags = p.tags || {};
             const image = tags.image || tags['image:0'];
             const addr = [tags['addr:housenumber'], tags['addr:street'], tags['addr:city']]
                 .filter(Boolean).join(' ');
-            return `<div class="popup">
+            const mapsRute = `https://www.google.com/maps/dir/?api=1&destination=${p.lat},${p.lon}`;
+            return `<div class="popup" data-wiki="${esc(tags.wikipedia || '')}" data-has-image="${image ? '1' : '0'}">
                 <h4>${esc(p.name)}</h4>
                 ${p.tour_category ? `<span class="tag">${esc(p.tour_category)}</span>` : ''}
                 ${p.subcategory ? `<span class="tag">${esc(p.subcategory)}</span>` : ''}
-                ${image ? `<img src="${esc(image)}" alt="" onerror="this.style.display='none'">` : ''}
+                <div class="img-slot">
+                    ${image ? `<img src="${esc(image)}" alt="" onerror="this.parentElement.innerHTML=''">` : ''}
+                </div>
                 ${tags.description ? `<p style="font-size:13px;color:#334155;margin:6px 0">${esc(tags.description).slice(0, 220)}${tags.description.length > 220 ? '…' : ''}</p>` : ''}
                 ${row('Jam buka', tags.opening_hours)}
                 ${row('Alamat', addr)}
@@ -155,13 +179,29 @@
                 ${row('Website', tags.website || tags['contact:website'], true)}
                 ${row('Wikipedia', wikiUrl(tags.wikipedia), true)}
                 ${facilities(tags)}
+                <div style="margin-top:8px"><a href="${mapsRute}" target="_blank" rel="noopener"
+                    style="display:inline-block;background:#10b981;color:#fff;padding:6px 10px;border-radius:6px;text-decoration:none;font-size:13px">
+                    ➔ Rute (Google Maps)</a></div>
                 <div class="dist">${Math.round(p.distance_m)} m dari pusat peta</div>
             </div>`;
+        }
+
+        async function enrichPopupImage(marker) {
+            const el = marker.getPopup().getElement();
+            if (!el) return;
+            const popupEl = el.querySelector('.popup');
+            if (!popupEl || popupEl.dataset.hasImage === '1' || popupEl.dataset.enriched) return;
+            popupEl.dataset.enriched = '1';
+            const url = await fetchWikiThumb(popupEl.dataset.wiki);
+            if (!url) return;
+            const slot = popupEl.querySelector('.img-slot');
+            if (slot) slot.innerHTML = `<img src="${esc(url)}" alt="" onerror="this.parentElement.innerHTML=''">`;
         }
 
         async function loadNearby() {
             const c = map.getCenter();
             const tourType = document.getElementById('type').value;
+            const district = document.getElementById('district').value;
             const radius = document.getElementById('radius').value;
             const url = new URL('/nearby', location.origin);
             url.searchParams.set('lat', c.lat.toFixed(6));
@@ -169,6 +209,7 @@
             url.searchParams.set('radius', radius);
             url.searchParams.set('limit', 200);
             if (tourType) url.searchParams.set('type', tourType);
+            if (district) url.searchParams.set('district', district);
 
             btn.disabled = true;
             btn.textContent = 'Memuat…';
@@ -178,7 +219,8 @@
                 const data = await res.json();
                 markers.clearLayers();
                 for (const p of data) {
-                    L.marker([p.lat, p.lon]).addTo(markers).bindPopup(popupHtml(p));
+                    const m = L.marker([p.lat, p.lon]).addTo(markers).bindPopup(popupHtml(p));
+                    m.on('popupopen', () => enrichPopupImage(m));
                 }
                 countEl.textContent = `${data.length} destinasi`;
             } catch (err) {
@@ -189,8 +231,22 @@
             }
         }
 
+        async function loadDistricts() {
+            try {
+                const res = await fetch('/districts');
+                if (!res.ok) return;
+                const list = await res.json();
+                const sel = document.getElementById('district');
+                for (const name of list) {
+                    const o = document.createElement('option');
+                    o.value = name; o.textContent = name;
+                    sel.appendChild(o);
+                }
+            } catch { /* non-fatal */ }
+        }
+
         btn.addEventListener('click', loadNearby);
-        loadNearby();
+        loadDistricts().then(loadNearby);
     </script>
 </body>
 </html>
