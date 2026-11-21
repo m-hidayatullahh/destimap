@@ -91,7 +91,7 @@ out center;`, bbox)
 	defer pool.Close()
 
 	log.Println("querying Overpass…")
-	client := &http.Client{Timeout: 120 * time.Second}
+	client := &http.Client{Timeout: 300 * time.Second}
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, overpassEndpoint,
 		strings.NewReader(url.Values{"data": []string{query}}.Encode()))
 	if err != nil {
