@@ -199,17 +199,27 @@
         }
 
         async function loadNearby() {
-            const c = map.getCenter();
             const tourType = document.getElementById('type').value;
             const district = document.getElementById('district').value;
             const radius = document.getElementById('radius').value;
-            const url = new URL('/nearby', location.origin);
-            url.searchParams.set('lat', c.lat.toFixed(6));
-            url.searchParams.set('lon', c.lng.toFixed(6));
-            url.searchParams.set('radius', radius);
-            url.searchParams.set('limit', 200);
-            if (tourType) url.searchParams.set('type', tourType);
-            if (district) url.searchParams.set('district', district);
+
+            // Kalau wilayah dipilih, ambil seluruh wilayah (abaikan radius) — jangan
+            // batasin via jarak dari pusat peta karena bisa luput sebagian besar.
+            let url;
+            if (district) {
+                url = new URL('/destinations', location.origin);
+                url.searchParams.set('district', district);
+                url.searchParams.set('limit', 10000);
+                if (tourType) url.searchParams.set('type', tourType);
+            } else {
+                const c = map.getCenter();
+                url = new URL('/nearby', location.origin);
+                url.searchParams.set('lat', c.lat.toFixed(6));
+                url.searchParams.set('lon', c.lng.toFixed(6));
+                url.searchParams.set('radius', radius);
+                url.searchParams.set('limit', 200);
+                if (tourType) url.searchParams.set('type', tourType);
+            }
 
             btn.disabled = true;
             btn.textContent = 'Memuat…';
@@ -222,14 +232,24 @@
                     const m = L.marker([p.lat, p.lon]).addTo(markers).bindPopup(popupHtml(p));
                     m.on('popupopen', () => enrichPopupImage(m));
                 }
-                countEl.textContent = `${data.length} destinasi`;
+                if (district && data.length > 0) {
+                    const group = L.featureGroup(data.map(p => L.marker([p.lat, p.lon])));
+                    map.fitBounds(group.getBounds().pad(0.05));
+                }
+                countEl.textContent = `${data.length} destinasi${district ? ` di ${district}` : ''}`;
             } catch (err) {
                 alert('Gagal muat: ' + err.message);
             } finally {
                 btn.disabled = false;
-                btn.textContent = 'Cari di sekitar pusat peta';
+                btn.textContent = district
+                    ? 'Muat ulang wilayah'
+                    : 'Cari di sekitar pusat peta';
             }
         }
+
+        // Auto reload saat kategori atau wilayah berubah (biar user nggak bingung)
+        document.getElementById('type').addEventListener('change', loadNearby);
+        document.getElementById('district').addEventListener('change', loadNearby);
 
         async function loadDistricts() {
             try {

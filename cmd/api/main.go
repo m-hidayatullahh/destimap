@@ -91,7 +91,7 @@ func handleList(w http.ResponseWriter, r *http.Request) {
 	subcategory := q.Get("subcategory")
 	tourType := q.Get("type")
 	district := q.Get("district")
-	limit := clampInt(parseInt(q.Get("limit"), 50), 1, 200)
+	limit := clampInt(parseInt(q.Get("limit"), 50), 1, 10000)
 	offset := clampInt(parseInt(q.Get("offset"), 0), 0, 100000)
 
 	rows, err := db.Query(r.Context(), `

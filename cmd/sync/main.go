@@ -16,10 +16,15 @@ import (
 	"github.com/joho/godotenv"
 )
 
-// shortcut: only tourism tag + public Overpass endpoint. upgrade when tourism-only
-// validated end-to-end: add amenity/shop/leisure/historic, and move to a dedicated
-// Overpass mirror if we hit rate limits.
-const overpassEndpoint = "https://overpass-api.de/api/interpreter"
+// Public Overpass mirrors. Dicoba berurutan; kalo satu 502/429/5xx/0-elements,
+// pindah ke berikutnya. osm.ch dihapus: mirror itu cuma punya data Swiss.
+// Upgrade: pindah ke Overpass instance sendiri kalo sync > 1x/hari.
+var overpassMirrors = []string{
+	"https://overpass-api.de/api/interpreter",
+	"https://overpass.kumi.systems/api/interpreter",
+	"https://overpass.osm.jp/api/interpreter",
+	"https://overpass.private.coffee/api/interpreter",
+}
 
 type overpassResp struct {
 	Elements []overpassEl `json:"elements"`
@@ -60,6 +65,54 @@ func (e overpassEl) categorySubcategory() (string, string) {
 	return "", ""
 }
 
+// queryOverpass coba tiap mirror sampai sukses. Retry pada 429/5xx dgn mirror
+// berikutnya. Return error kalo semua mirror gagal.
+func queryOverpass(ctx context.Context, query string) (*overpassResp, error) {
+	client := &http.Client{Timeout: 300 * time.Second}
+	body := url.Values{"data": []string{query}}.Encode()
+
+	var lastErr error
+	for _, endpoint := range overpassMirrors {
+		log.Printf("querying %s …", endpoint)
+		req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint, strings.NewReader(body))
+		if err != nil {
+			return nil, err
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		req.Header.Set("User-Agent", "destimap-sync/0.1 (contact: hidayatullahblk@gmail.com)")
+
+		resp, err := client.Do(req)
+		if err != nil {
+			lastErr = err
+			log.Printf("  network error: %v — try next mirror", err)
+			continue
+		}
+		if resp.StatusCode != http.StatusOK {
+			b, _ := io.ReadAll(resp.Body)
+			resp.Body.Close()
+			lastErr = fmt.Errorf("HTTP %d: %s", resp.StatusCode, strings.TrimSpace(string(b)))
+			log.Printf("  %v — try next mirror", lastErr)
+			continue
+		}
+		var r overpassResp
+		if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
+			resp.Body.Close()
+			lastErr = fmt.Errorf("decode: %w", err)
+			log.Printf("  %v — try next mirror", lastErr)
+			continue
+		}
+		resp.Body.Close()
+		if len(r.Elements) == 0 {
+			lastErr = fmt.Errorf("0 elements (mirror mungkin ga punya data Indonesia)")
+			log.Printf("  %v — try next mirror", lastErr)
+			continue
+		}
+		log.Printf("  OK, %d elements", len(r.Elements))
+		return &r, nil
+	}
+	return nil, fmt.Errorf("all mirrors failed, last: %w", lastErr)
+}
+
 func main() {
 	_ = godotenv.Load()
 
@@ -90,28 +143,9 @@ out center;`, bbox)
 	}
 	defer pool.Close()
 
-	log.Println("querying Overpass…")
-	client := &http.Client{Timeout: 300 * time.Second}
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, overpassEndpoint,
-		strings.NewReader(url.Values{"data": []string{query}}.Encode()))
+	r, err := queryOverpass(ctx, query)
 	if err != nil {
-		log.Fatalf("build request: %v", err)
-	}
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
-	req.Header.Set("User-Agent", "destimap-sync/0.1 (contact: hidayatullahblk@gmail.com)")
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Fatalf("overpass request: %v", err)
-	}
-	defer resp.Body.Close()
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		log.Fatalf("overpass %d: %s", resp.StatusCode, b)
-	}
-
-	var r overpassResp
-	if err := json.NewDecoder(resp.Body).Decode(&r); err != nil {
-		log.Fatalf("decode: %v", err)
+		log.Fatalf("overpass: %v", err)
 	}
 	log.Printf("received %d elements", len(r.Elements))
 
